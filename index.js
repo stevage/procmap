@@ -10,7 +10,7 @@ const makeData = require('./data');
 
 
 const MAXZOOM = 20;   // Maximum level we will generate and serve vector tiles for
-const MINZOOM = 8;   // Minimum level we will generate and serve vector tiles for
+const MINZOOM = 6;   // Minimum level we will generate and serve vector tiles for
 
 
 const app = express();
@@ -26,6 +26,10 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
     // generate the geometry spanning the required area
     const tileContents = makeData(tilebelt.tileToBBOX([x, y, z]))
     
+    if (req.params.format === 'geojson') {
+        res.send(tileContents);
+        return;
+    }
     // convert it into vector tiles
     const gridTiles = geojsonVt(tileContents, {
         maxZoom: z,
@@ -51,8 +55,8 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
             .end();
     } else if (req.params.format === 'json') {
         res.send(requestedTile);
-    } else if (req.params.format === 'geojson') {
-        res.send(tileContents);
+    // } else if (req.params.format === 'geojson') {
+    //     res.send(tileContents);
     } else {
         res.status(400).send('Unsupported format');
     }
