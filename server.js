@@ -23,6 +23,7 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
     if (z < MINZOOM) {
         return res.status(404).send('Zoom too low').end();
     }
+    // TODO separate layers?
     // generate the geometry spanning the required area
     const tileContents = makeData(tilebelt.tileToBBOX([x, y, z]))
     
