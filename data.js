@@ -21,15 +21,21 @@ function random(seed) {
     return rng.uFloat32()
 }
 
-const scale = 50;
+function random0(seed) {
+    return rng.uFloat32() - 0.5;
+}
+
+
+const scale = 50; // 50
  
 function pointsForBounds([minx, miny, maxx, maxy]) {
     const q = t => Math.floor(t * scale);// / scale;
     const points = [];
-    for (let x = q(minx); x <= q(maxx); x += 1) {
-        for (let y = q(miny); y <= q(maxy); y += 1) {
-            const c = town
-            if (x < minx * scale || y < miny * scale || x >= maxx * scale || y >= maxy * scale) {
+    const buffer = 10;
+    for (let x = q(minx) - buffer; x <= q(maxx)+buffer; x ++) {
+        for (let y = q(miny) - buffer; y <= q(maxy)+buffer; y ++) {
+            const [cx, cy] = townCoords(x, y);
+            if (cx < minx || cy < miny || cx >= maxx || cy >= maxy) {
                 continue;
             }
             points.push([x,y]);
@@ -48,14 +54,22 @@ function makePoint(coordinates, properties) {
         }
     }
 }
-function town(x, y, [minx, miny, maxx, maxy]) {
-    // unsolved problem: by constraining the x/y to the bounding box for a tile, the generated data becomes scale dependent
-    // so as we zoom in/out, points near the edges of tiles jump around
-    function wrap(z, min, max) {
-        const range = (max - min) * scale;
-        return (z - min* scale ) % range + min * scale;
-    }
 
+function townCoords(x, y) {
+    // function wrap(z, min, max) {
+    //     const range = (max - min) * scale;
+    //     return (z - min* scale ) % range + min * scale;
+    // }
+    setSeedXY(x, y);
+    const M = 1;
+    const coords = [
+        (x + random0() * M) / scale, 
+        (y + random0() * M + (x % 2) * 0.5) / scale, 
+    ];
+    return coords;
+}
+
+function town(x, y) {
     const seed = hashSeed(x, y);
     setSeed(seed);
     const props = {
@@ -64,12 +78,8 @@ function town(x, y, [minx, miny, maxx, maxy]) {
         name: fakeName({seed}),
         size: Math.ceil(random()*random()*random()*5)
     };
-    const coords = [
-        wrap(x + random(), minx, maxx) / scale, 
-        wrap(y + random(), miny, maxy) / scale, 
-    ];
-    // console.log(x, y, props.name);
-    return makePoint(coords, props)
+    
+    return makePoint(townCoords(x, y), props)
 }
 
 function road(townA, townB) {
@@ -78,8 +88,8 @@ function road(townA, townB) {
             const l = Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1])  * (b[1] - a[1]));
             const M = 4;
             return [
-                (b[0] - a[0]) / 2 + a[0] - (random() - 0.5) * l / M, 
-                (b[1] - a[1]) / 2 + a[1] - (random() - 0.5) * l / M
+                (b[0] - a[0]) / 2 + a[0] - random0() * l / M, 
+                (b[1] - a[1]) / 2 + a[1] - random0() * l / M
             ];
         }
         const out = [];
@@ -108,7 +118,10 @@ function road(townA, townB) {
         }
     }
 }
-
+/*
+TODO: make roads connect across tile boundaries. I think if we are careful to make each road connection symmetric, and construct
+each road in the same direction, then they should end up joining. I hope.
+*/
 function makeRoads(bounds) {
     function connect(a, b) {
         if (a.properties.size === b.properties.size) {
