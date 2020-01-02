@@ -7,15 +7,12 @@ const compression = require('compression');
 
 const makeData = require('./data');
 
-
-
 const MAXZOOM = 20;   // Maximum level we will generate and serve vector tiles for
 const MINZOOM = 8;   // Minimum level we will generate and serve vector tiles for
 
-
 const app = express();
 app.use(cors());
-app.use(compression()); // doesn't seem to work on pbf?
+app.use(compression()); // doesn't seem to work on pbf
 
 app.get('/grid/:z/:x/:y.:format', (req, res) => {
     const p = req.params;
@@ -23,11 +20,11 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
     if (z < MINZOOM) {
         return res.status(404).send('Zoom too low').end();
     }
-    // TODO separate layers?
     // generate the geometry spanning the required area
     const tileContents = makeData(tilebelt.tileToBBOX([x, y, z]), z)
     
     if (req.params.format === 'geojson') {
+        // if they want raw geojson, skip the tile generation process
         res.send(tileContents);
         return;
     }
@@ -38,8 +35,7 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
         buffer: 0,
         indexMaxPoints: 1e7
     });
-    // console.log(gridTiles.tileCoords);
-    
+
     // select the one vector tile actually requested
     const requestedTile = gridTiles.getTile(z, x, y);
     if (!requestedTile) {
@@ -56,12 +52,9 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
             .end();
     } else if (req.params.format === 'json') {
         res.send(requestedTile);
-    // } else if (req.params.format === 'geojson') {
-    //     res.send(tileContents);
     } else {
         res.status(400).send('Unsupported format');
     }
-    
 }); 
 
 const listener = app.listen(3031, function() {

@@ -6,6 +6,7 @@ const SimplexNoise = require('simplex-noise')
 const simplex = new SimplexNoise('seed');
 const seeds = {}
 const turf = require('@turf/turf');
+const perf = require('execution-time')();
 function hashSeed(x, y) {
     return hash(`${x}${y}`);
 }
@@ -162,7 +163,8 @@ function makeRoads(bounds, zoom) {
     }
     const complexity = zoom * 2 - 18 ; // 7
     const roads = [];
-    console.log('Road complexity', complexity);
+    perf.start('makeroads');
+    // console.log('Road complexity', complexity);
     pointsForBounds(bounds).forEach(([x,y]) => {
         for (let tx = x - 1; tx <= x + 1; tx ++) {
             for (let ty = y - 1; ty <= y + 1; ty ++) {
@@ -180,25 +182,28 @@ function makeRoads(bounds, zoom) {
             }
         }
     });
-    console.log(`${roads.length} roads.`);
+    console.log(`${roads.length} roads (complexity ${complexity}) in ${Math.round(perf.stop('makeroads').time)}ms`);
     return roads;
 }
 
 function makeTowns(bounds) {
     const towns = [];
+    perf.start('towns');
     pointsForBounds(bounds).forEach(([x,y]) => {        
         towns.push(town([x, y]))
     });
-    console.log(`${towns.length} towns.`);
+    console.log(`${towns.length} towns in ${Math.round(perf.stop('towns').time)}ms.`);
+    
+
     return towns;
 }
 
 function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFactor) {
     
     const s = z => z / polyScale;
-    function xy(x, y, dx=0, dy=0) {
+    function xy(x, y) {
         setSeedXY(x, y);
-        return [(x + dx + random0()) / polyScale, (y + dy + 0*random0()) / polyScale];
+        return [(x + 0.5*random0()) / polyScale, (y +  0.5*random0()) / polyScale];
     }
     function water(coordinates) {
         const u = turf.combine(turf.unkinkPolygon({
@@ -218,8 +223,8 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
     }
     const waters = [];
     const isWater = coord => simplex.noise2D(coord[0]/10, coord[1]/10) + 1 < ratio * 2;
-    console.log(`Poly ${type} complexity ${complexity}`);
-
+    // console.log(`Poly ${type} complexity ${complexity}`);
+    perf.start(`poly-${type}`);
     pointsForBounds(bounds, false, polyScale).forEach(([x,y]) => {
         setSeedXY(x,y);
         const corners = [[x,y], [x+1,y],[x+1,y+1], [x,y+1]];
@@ -268,6 +273,8 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
             }
         }
     });
+    console.log(`${waters.length} ${type} polygon (complexity ${complexity}) in ${Math.round(perf.stop(`poly-${type}`).time)}ms`);
+
     return waters;
 
 
@@ -279,9 +286,11 @@ module.exports = function dataForBounds(bounds, zoom) {
         features: [
             ...makeTowns(bounds), 
             ...makeRoads(bounds, zoom), 
-            ...makePolys(bounds, 200, 'forest',  zoom - 8, 0.5, 1), // complexity: 4
-            ...makePolys(bounds, 200, 'forest2',  zoom - 8, 0.3, 1),
-            ...makePolys(bounds, 30, 'water',zoom - 6, 0.3, 0.5)
+            ...makePolys(bounds, 100, 'forest',  zoom - 8, 0.5, 0.6), // complexity: 4
+            ...makePolys(bounds, 100, 'forest2', zoom - 8, 0.3, 0.8),
+            ...makePolys(bounds, 30, 'water',    zoom - 6, 0.3, 0.5),
+            ...makePolys(bounds, 30, 'water2',   zoom - 5, 0.3, 0.45),
+            ...makePolys(bounds, 30, 'water3',   zoom - 8, 0.2, 0.5),
         ]
     };
 }
