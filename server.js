@@ -10,7 +10,7 @@ const makeData = require('./data');
 
 
 const MAXZOOM = 20;   // Maximum level we will generate and serve vector tiles for
-const MINZOOM = 6;   // Minimum level we will generate and serve vector tiles for
+const MINZOOM = 8;   // Minimum level we will generate and serve vector tiles for
 
 
 const app = express();
@@ -25,7 +25,7 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
     }
     // TODO separate layers?
     // generate the geometry spanning the required area
-    const tileContents = makeData(tilebelt.tileToBBOX([x, y, z]))
+    const tileContents = makeData(tilebelt.tileToBBOX([x, y, z]), z)
     
     if (req.params.format === 'geojson') {
         res.send(tileContents);
@@ -38,7 +38,7 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
         buffer: 0,
         indexMaxPoints: 1e7
     });
-    console.log(gridTiles.tileCoords);
+    // console.log(gridTiles.tileCoords);
     
     // select the one vector tile actually requested
     const requestedTile = gridTiles.getTile(z, x, y);
