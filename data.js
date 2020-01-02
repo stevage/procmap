@@ -196,9 +196,9 @@ function makeTowns(bounds) {
 function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFactor) {
     
     const s = z => z / polyScale;
-    function xy(x, y, dx, dy) {
+    function xy(x, y, dx=0, dy=0) {
         setSeedXY(x, y);
-        return (x + dx + random0(), y + dy + random0());
+        return [(x + dx + random0()) / polyScale, (y + dy + 0*random0()) / polyScale];
     }
     function water(coordinates) {
         const u = turf.combine(turf.unkinkPolygon({
@@ -225,45 +225,45 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
         const corners = [[x,y], [x+1,y],[x+1,y+1], [x,y+1]];
         //const cp = [s(x+0.5), s(y+0.5)]
         const cp = [s(x + random()), s(y + random())];
-        const W = random() * wiggleFactor;
+        const W = /*random() * */wiggleFactor;
         //4
 
         // const [w1, w2, w3, w4] = [simplex.noise2D(x, y), simplex.noise2D(x+1, y), simplex.noise2D(x+1, y+1), simplex.noise2D(x, y+1)];
         if (isWater(corners[0]) && isWater(corners[1]) && isWater(corners[2]) && isWater(corners[3])) {
             waters.push(water([[
-                [s(x), s(y)],
-                [s(x + 1), s(y)],
-                [s(x + 1), s(y + 1)],
-                [s(x), s(y+1)],
-                [s(x), s(y)]
+                xy(x, y, 0, 0),
+                xy(x+1, y, 0, 0),
+                xy(x+1, y+1),
+                xy(x, y+1),
+                xy(x, y, 0, 0)
             ]]));
         } else {
             if (isWater(corners[0]) && isWater(corners[3])){// && !isWater(corners[2]) && !isWater(corners[1])) {
                 // left is water, right is not
                 waters.push(water([[
-                    ...complexify([[s(x), s(y)], cp, [s(x), s(y+1)]], complexity, W),
-                    [s(x), s(y)]
+                    ...complexify([xy(x, y, 0, 0), cp, xy(x, y+1)], complexity, W),
+                    xy(x, y, 0, 0)
                 ]]));
             } 
             if (isWater(corners[1]) && isWater(corners[2])){// && !isWater(corners[0]) && !isWater(corners[3])) {
                 // right is water, left is not
                 waters.push(water([[
-                    ...complexify([[s(x+1), s(y)], cp, [s(x+1), s(y+1)]], complexity, W),
-                    [s(x+1), s(y)]
+                    ...complexify([xy(x+1, y), cp, xy(x+1, y+1)], complexity, W),
+                    xy(x+1, y)
                 ]]));
             } 
             if (isWater(corners[2]) && isWater(corners[3])){// && !isWater(corners[0]) && !isWater(corners[1])) {
                 // up is water, down is not
                 waters.push(water([[
-                    ...complexify([[s(x), s(y+1)], cp, [s(x+1), s(y+1)]], complexity, W),
-                    [s(x), s(y+1)]
+                    ...complexify([xy(x, y+1), cp, xy(x+1, y+1)], complexity, W),
+                    xy(x, y+1)
                 ]]));
             }
             if (isWater(corners[0]) && isWater(corners[1])){// && !isWater(corners[2]) && !isWater(corners[3])) {
                 // down is water, up is not
                 waters.push(water([[
-                    ...complexify([[s(x), s(y)], cp, [s(x+1), s(y)]], complexity, W),
-                    [s(x), s(y)]
+                    ...complexify([xy(x, y, 0, 0), cp, xy(x+1, y)], complexity, W),
+                    xy(x, y, 0, 0)
                 ]]));
             }
         }
@@ -280,6 +280,7 @@ module.exports = function dataForBounds(bounds, zoom) {
             ...makeTowns(bounds), 
             ...makeRoads(bounds, zoom), 
             ...makePolys(bounds, 200, 'forest',  zoom - 8, 0.5, 1), // complexity: 4
+            ...makePolys(bounds, 200, 'forest2',  zoom - 8, 0.3, 1),
             ...makePolys(bounds, 30, 'water',zoom - 6, 0.3, 0.5)
         ]
     };
