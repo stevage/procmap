@@ -1109,6 +1109,10 @@ cd@^0.3.3:
   version "0.3.3"
   resolved "https://registry.yarnpkg.com/cd/-/cd-0.3.3.tgz#108ecb57bff93b96b9115c54573cfef3008ef94d"
 
+colors@^1.4.0:
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/colors/-/colors-1.4.0.tgz#c50491479d4c1bdaed2c9ced32cf7c7dc2360f78"
+
 commander@2:
   version "2.20.3"
   resolved "https://registry.yarnpkg.com/commander/-/commander-2.20.3.tgz#fd485e84c03eb4881c20722ba48035e8531aeb33"
@@ -1300,9 +1304,9 @@ express@^4.17.1:
     utils-merge "1.0.1"
     vary "~1.1.2"
 
-fake-town-name@0.1.0:
-  version "0.1.0"
-  resolved "https://registry.yarnpkg.com/fake-town-name/-/fake-town-name-0.1.0.tgz#c18d43819d8303ea0e6eba8d5b5bafd4a6e654b6"
+fake-town-name@0.3.0:
+  version "0.3.0"
+  resolved "https://registry.yarnpkg.com/fake-town-name/-/fake-town-name-0.3.0.tgz#e344f3096c6af6b4d2d6e9d9295930103ebeb065"
   dependencies:
     number-generator "3.0.1"
 

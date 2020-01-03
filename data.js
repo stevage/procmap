@@ -7,6 +7,7 @@ const simplex = new SimplexNoise('seed');
 const seeds = {}
 const turf = require('@turf/turf');
 const perf = require('execution-time')();
+require('colors');
 function hashSeed(x, y) {
     return hash(`${x}${y}`);
 }
@@ -140,25 +141,80 @@ function complexify(coords, times, wiggliness) {
     }
 }
 
-function road(townA, townB, complexity) {
+function road(townA, townB, complexity, waterPolys) {
+    function roadFeature(coordinates, bridge='') {
+        return {
+            type: 'Feature',
+            properties: {
+                type: 'road',
+                minsize,
+                maxsize,
+                bridge 
+            }, 
+            geometry: {
+                type: 'LineString',
+                coordinates
+                // coordinates: complexify(straightRoad, complexity, 0.4 / (minsize + maxsize) * 2)
+            }
+        };
+    }
+
+    /* water/land transition points can be in any order, so we sort by distance from the start */
+    function sortBridgePoints(bridgePoints) {
+        const [x, y] = bridgePoints[0];
+        return bridgePoints.sort(([ax, ay], [bx, by]) =>
+            ((ax - x) * (ax - x) + (ay - y) * (ay - y)) -
+            ((bx - x) * (bx - x) + (by - y) * (by - y))
+        );
+    }
+
+
     setSeed(townA.properties.seed);
     const minsize = Math.min(townA.properties.size, townB.properties.size);
     const maxsize = Math.max(townA.properties.size, townB.properties.size);
-    
-    return {
-        type: 'Feature',
-        properties: {
-            type: 'road',
-            minsize,
-            maxsize,
-        }, 
-        geometry: {
-            type: 'LineString',
-            coordinates: complexify([townA.geometry.coordinates, townB.geometry.coordinates], 
-                complexity, // 7
-                0.4 / (minsize + maxsize) * 2)
+    const straightRoad = [townA.geometry.coordinates, townB.geometry.coordinates];
+    const straightRoadLine = { type: 'LineString', coordinates: straightRoad }
+    let bridgePoints = [];
+    for (let water of waterPolys) {
+        if (turf.booleanCrosses(water.geometry, straightRoadLine)) {
+            bridgePoints.push(...turf.lineIntersect(water, straightRoadLine).features.map(f => f.geometry.coordinates));
         }
     }
+    bridgePoints = [townA.geometry.coordinates, ...bridgePoints, townB.geometry.coordinates];
+    let onBridge = false;
+    let roadSegments = [];
+    const roadFeatures = []; 
+    const bridgeCount = bridgePoints.length / 2;
+
+    
+    bridgePoints = sortBridgePoints(bridgePoints);
+
+    bridgePoints.forEach((coord, i) => {
+        nextCoord = bridgePoints[i+1];
+        if (!nextCoord) {
+            return;
+        }
+        if (!onBridge) {
+            // TODO this duplicates transition points
+            roadFeatures.push(roadFeature(complexify([coord, nextCoord], complexity - bridgeCount, 0.4 / (minsize + maxsize) * 2)));
+        } else {
+            const d2 = dist2(coord, nextCoord);
+            // console.log(d2);
+            if (d2 > 0.00004) {
+                roadFeatures.push(roadFeature(complexify([coord, nextCoord], 2, 0.2), 'ferry'));
+            } else {
+                roadFeatures.push(roadFeature([coord, nextCoord], 'bridge'));
+            }
+            // roadPoints = [...roadPoints, coord, nextCoord];
+        }
+        onBridge = !onBridge;
+
+    });
+
+    // if (bridgePoints.length) {
+    //     console.log(bridgePoints);
+    // }
+    return roadFeatures
 }
 
 const dist2 = (a, b) => (b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]) ;
@@ -202,7 +258,7 @@ function makeRoads(bounds, zoom, waterPolys) {
                     setSeedXY(...town1.geometry.coordinates);
 
                     if (connect(town1, town2)) {
-                        roads.push(road(town1, town2, complexity))
+                        roads.push(...road(town1, town2, complexity,waterPolys))
                     }
                 }
 
@@ -220,7 +276,7 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
     const s = z => z / polyScale;
     function xy(x, y) {
         setSeedXY(x, y);
-        const M = 1;
+        const M = 0;
         return [(x + M*random0()) / polyScale, (y +  M*random0()) / polyScale];
     }
     function water(coordinates) {
@@ -246,15 +302,10 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
     pointsForBounds(bounds, false, polyScale).forEach(([x,y]) => {
         setSeedXY(x,y);
         const corners = [[x,y], [x+1,y],[x+1,y+1], [x,y+1]];
-        //const cp = [s(x+0.5), s(y+0.5)]
         const N = 1; // 1 // how far within the cell the midpoint can be
-        // const cp = [s(x + N * random()), s(y + N * random())]; // Whoa, this should really be XY. lol.
         const cp = xy(x + random(), y + random()); // Whoa, this should really be XY. lol.
 
         const W = /*random() * */wiggleFactor;
-        //4
-
-        // const [w1, w2, w3, w4] = [simplex.noise2D(x, y), simplex.noise2D(x+1, y), simplex.noise2D(x+1, y+1), simplex.noise2D(x, y+1)];
         if (isWater(corners[0]) && isWater(corners[1]) && isWater(corners[2]) && isWater(corners[3])) {
             waters.push(water([[
                 xy(x, y, 0, 0),
@@ -305,11 +356,18 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
 
 function perfReport(entities, type, note='') {
     const time = perf.stop(`${type}`).time;
-    console.log(`${entities} ${type} ${note} in ${Math.round(time)}ms (${ entities ? Math.round(time / entities * 10)/10 + 'ms each' : '' })`);
+    const timeColor = time > 200 ? String(Math.round(time)).red : Math.round(time);
+    console.log(`${entities} ${type} ${note} in ${timeColor}ms (${ entities ? Math.round(time / entities * 10)/10 + 'ms each' : '' })`);
 } 
 
 module.exports = function dataForBounds(bounds, zoom) {
-    const waterPolys = makePolys(bounds, 30, 'water2',  zoom - 5, 0.3, 0.45);
+    const WATERSCALE = 100;
+    const waterPolys = turf.flatten(turf.featureCollection(makePolys(bounds, 
+        WATERSCALE,
+        'water2',  
+        zoom - 5, 
+        0.3, 
+        0.45))).features;
     const towns = makeTowns(bounds, waterPolys);
     return {
         type: 'FeatureCollection',
@@ -318,9 +376,11 @@ module.exports = function dataForBounds(bounds, zoom) {
             ...makeRoads(bounds, zoom, waterPolys), 
             ...makePolys(bounds, 100, 'forest',  zoom - 8, 0.5, 0.6), // complexity: 4
             ...makePolys(bounds, 100, 'forest2', zoom - 8, 0.3, 0.8),
-            ...makePolys(bounds, 30, 'water',    zoom - 6, 0.3, 0.5),
+            ...makePolys(bounds, WATERSCALE, 'water',    zoom - 6, 0.3, 0.5),
             ...waterPolys,
-            ...makePolys(bounds, 30, 'water3',   zoom - 8, 0.2, 0.5),
+            ...makePolys(bounds, WATERSCALE, 'water3',   zoom - 8, 0.2, 0.5),
+
+
             // ...makePolys(bounds, 30, 'water4',   zoom - 8, 0.15, 0.5),
         ]
     };
