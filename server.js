@@ -32,7 +32,7 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
     const gridTiles = geojsonVt(tileContents, {
         maxZoom: z,
         indexMaxZoom: z,
-        buffer: 0,
+        buffer: 4096,
         indexMaxPoints: 1e7
     });
 
@@ -56,7 +56,48 @@ app.get('/grid/:z/:x/:y.:format', (req, res) => {
         res.status(400).send('Unsupported format');
     }
 }); 
-
+app.get('/', (req, res)=> {
+    // res.send(`
+    //     <!DOCTYPE html>
+    //     <html lang="en">
+    //     <head>
+    //         <script>
+    //         window.location.replace('https://stevage.github.io/alt-world');
+    //         </script>
+    //     </head>
+    //     <body>
+    //         Redirecting to <a href="https://stevage.github.io/alt-world">https://stevage.github.io/alt-world</a>.
+    //     </body>
+    //     </html>
+    // `);
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <style>
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+        iframe {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom:0;
+            top: 0;
+        }
+        
+        </style>
+    </head>
+    <body>
+        <iframe frameborder="0" src="https://stevage.github.io/alt-world">
+    </body>
+    </html>
+    `);
+})
+  
 const listener = app.listen(3031, function() {
     // test URL /grid/18/236602/160844.json
     console.log('Running procmap server on port ' + listener.address().port);

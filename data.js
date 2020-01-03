@@ -23,11 +23,11 @@ function setSeedXY(x, y) {
     setSeed(hashSeed(x, y));
 }
 
-function random(seed) {
+function random() {
     return rng.uFloat32()
 }
 
-function random0(seed) {
+function random0() {
     return rng.uFloat32() - 0.5;
 }
 
@@ -67,15 +67,16 @@ function townCoords(x, y) {
     //     return (z - min* scale ) % range + min * scale;
     // }
     setSeedXY(x, y);
+    // const M = 1; //###
     const M = 1;
     const coords = [
         (x + random0() * M) / scale, 
-        (y + random0() * M + (x % 2) * 0.5) / scale, 
+        (y + random0() * M /*+ (x % 2) * 0.5*/) / scale, 
     ];
     return coords;
 }
 
-function town([x, y]) {
+function makeTown([x, y]) {
     const seed = hashSeed(x, y);
     setSeed(seed);
     const props = {
@@ -88,6 +89,26 @@ function town([x, y]) {
     return makePoint(townCoords(x, y), props)
 }
 
+function notUnderwaterTown(townxy, waterPolys) {
+    return !waterPolys.find(waterPoly => turf.booleanPointInPolygon(townCoords(...townxy), waterPoly))
+}
+
+
+function makeTowns(bounds, waterPolys) {
+    perf.start('towns');
+    const towns = pointsForBounds(bounds)
+        .filter(t => notUnderwaterTown(t, waterPolys))
+        .map(makeTown);
+
+        perfReport(towns.length, 'towns');
+    
+    // console.log(`${towns.length} towns in ${Math.round(perf.stop('towns').time)}ms.`);
+    
+
+    return towns;
+}
+
+
 /* Make a series of coordinates more wiggle */
 function complexify(coords, times, wiggliness) {
     function midpoint(a, b) {
@@ -96,6 +117,9 @@ function complexify(coords, times, wiggliness) {
             (b[0] - a[0]) / 2 + a[0] - random0() * l * wiggliness, 
             (b[1] - a[1]) / 2 + a[1] - random0() * l * wiggliness
         ];
+    }
+    if (times < 1) {
+        return coords;
     }
     setSeedString(String(coords[0]));
     const out = [];
@@ -142,14 +166,14 @@ const dist2 = (a, b) => (b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - 
 TODO: make roads connect across tile boundaries. I think if we are careful to make each road connection symmetric, and construct
 each road in the same direction, then they should end up joining. I hope.
 */
-function makeRoads(bounds, zoom) {
+function makeRoads(bounds, zoom, waterPolys) {
     
     /* Determines if two towns should be connected by road */
     function connect(a, b) {
         const d2 = dist2(a.geometry.coordinates, b.geometry.coordinates) * scale * scale;
-        const A = 0.75;  //0.75// increase for more towns in general
-        const B = 0.25; //0.25// decrease for more bias towards nearby towns connected
-        const C = 20; //20// decrease for greater connectivity for large towns
+        const A = 0.75; // increase for more roads in general
+        const B = 0.25; // decrease for more bias towards nearby towns connected
+        const C = 20;   // decrease for greater connectivity for large towns
         const maxsize = Math.max(a.properties.size, b.properties.size);
         return random() < A/(d2 + B) + maxsize/C;
     }
@@ -161,41 +185,34 @@ function makeRoads(bounds, zoom) {
             return [[tx2, ty2], [tx1, ty1]];
         }
     }
-    const complexity = zoom * 2 - 18 ; // 7
+    const complexity =  zoom * 2 - 18 ; // 7
     const roads = [];
-    perf.start('makeroads');
+    perf.start('roads');
     // console.log('Road complexity', complexity);
-    pointsForBounds(bounds).forEach(([x,y]) => {
+    // TODO try to avoid drawing every road twice?
+    pointsForBounds(bounds, false).forEach(([x,y]) => {
         for (let tx = x - 1; tx <= x + 1; tx ++) {
             for (let ty = y - 1; ty <= y + 1; ty ++) {
                 if (tx === x && ty === y) {
                     continue;
                 }
                 // put the towns in consistent order regardless of which is "our" town
-                const [town1, town2] = order(x, y, tx, ty).map(town);
-                setSeedXY(...town1.geometry.coordinates);
+                const [town1, town2] = order(x, y, tx, ty).map(makeTown);
+                if (notUnderwaterTown([x, y], waterPolys) && notUnderwaterTown([tx, ty], waterPolys)) {
+                    setSeedXY(...town1.geometry.coordinates);
 
-                if (connect(town1, town2)) {
-                    roads.push(road(town1, town2, complexity))
+                    if (connect(town1, town2)) {
+                        roads.push(road(town1, town2, complexity))
+                    }
                 }
 
             }
         }
     });
-    console.log(`${roads.length} roads (complexity ${complexity}) in ${Math.round(perf.stop('makeroads').time)}ms`);
+    // console.log(`${roads.length} roads (complexity ${complexity}) in ${Math.round(perf.stop('makeroads').time)}ms`);
+    perfReport(roads.length, 'roads', `(complexity ${complexity})`);
+
     return roads;
-}
-
-function makeTowns(bounds) {
-    const towns = [];
-    perf.start('towns');
-    pointsForBounds(bounds).forEach(([x,y]) => {        
-        towns.push(town([x, y]))
-    });
-    console.log(`${towns.length} towns in ${Math.round(perf.stop('towns').time)}ms.`);
-    
-
-    return towns;
 }
 
 function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFactor) {
@@ -203,7 +220,8 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
     const s = z => z / polyScale;
     function xy(x, y) {
         setSeedXY(x, y);
-        return [(x + 0.5*random0()) / polyScale, (y +  0.5*random0()) / polyScale];
+        const M = 1;
+        return [(x + M*random0()) / polyScale, (y +  M*random0()) / polyScale];
     }
     function water(coordinates) {
         const u = turf.combine(turf.unkinkPolygon({
@@ -224,12 +242,15 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
     const waters = [];
     const isWater = coord => simplex.noise2D(coord[0]/10, coord[1]/10) + 1 < ratio * 2;
     // console.log(`Poly ${type} complexity ${complexity}`);
-    perf.start(`poly-${type}`);
+    perf.start(type);
     pointsForBounds(bounds, false, polyScale).forEach(([x,y]) => {
         setSeedXY(x,y);
         const corners = [[x,y], [x+1,y],[x+1,y+1], [x,y+1]];
         //const cp = [s(x+0.5), s(y+0.5)]
-        const cp = [s(x + random()), s(y + random())];
+        const N = 1; // 1 // how far within the cell the midpoint can be
+        // const cp = [s(x + N * random()), s(y + N * random())]; // Whoa, this should really be XY. lol.
+        const cp = xy(x + random(), y + random()); // Whoa, this should really be XY. lol.
+
         const W = /*random() * */wiggleFactor;
         //4
 
@@ -243,6 +264,7 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
                 xy(x, y, 0, 0)
             ]]));
         } else {
+            // return waters
             if (isWater(corners[0]) && isWater(corners[3])){// && !isWater(corners[2]) && !isWater(corners[1])) {
                 // left is water, right is not
                 waters.push(water([[
@@ -273,24 +295,33 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
             }
         }
     });
-    console.log(`${waters.length} ${type} polygon (complexity ${complexity}) in ${Math.round(perf.stop(`poly-${type}`).time)}ms`);
+    perfReport(waters.length, type, `(complexity ${complexity})`);
+    // console.log(`${waters.length} ${type} polygon (complexity ${complexity}) in ${Math.round(perf.stop(`poly-${type}`).time)}ms`);
 
     return waters;
 
 
 }
 
+function perfReport(entities, type, note='') {
+    const time = perf.stop(`${type}`).time;
+    console.log(`${entities} ${type} ${note} in ${Math.round(time)}ms (${ entities ? Math.round(time / entities * 10)/10 + 'ms each' : '' })`);
+} 
+
 module.exports = function dataForBounds(bounds, zoom) {
+    const waterPolys = makePolys(bounds, 30, 'water2',  zoom - 5, 0.3, 0.45);
+    const towns = makeTowns(bounds, waterPolys);
     return {
         type: 'FeatureCollection',
         features: [
-            ...makeTowns(bounds), 
-            ...makeRoads(bounds, zoom), 
+            ...towns,
+            ...makeRoads(bounds, zoom, waterPolys), 
             ...makePolys(bounds, 100, 'forest',  zoom - 8, 0.5, 0.6), // complexity: 4
             ...makePolys(bounds, 100, 'forest2', zoom - 8, 0.3, 0.8),
             ...makePolys(bounds, 30, 'water',    zoom - 6, 0.3, 0.5),
-            ...makePolys(bounds, 30, 'water2',   zoom - 5, 0.3, 0.45),
+            ...waterPolys,
             ...makePolys(bounds, 30, 'water3',   zoom - 8, 0.2, 0.5),
+            // ...makePolys(bounds, 30, 'water4',   zoom - 8, 0.15, 0.5),
         ]
     };
 }
