@@ -67,6 +67,7 @@ function setCache(type, key, value) {
 }
 
 function cacheReport(type) {
+    return;
     console.log(`${type.cyan} cache stats: `, 
     // `${cacheStats[type].size} items`,  // doesn't work now that the cache can be emptied
     `${Math.round(cacheStats[type].hits / (cacheStats[type].misses + cacheStats[type].hits) * 100)}% hit rate`.yellow); 
@@ -117,26 +118,36 @@ function townCoords(x, y) {
 
 function makeTown([x, y], waterPolys) {
     const cacheKey = `${x},${y}`;
-    if (getCache('town', cacheKey) !== undefined) {
+    if (getCache('town', cacheKey) === false) {
+        // definitely underwater
         return getCache('town', cacheKey);
     }
     if (underwaterTown([x,y], waterPolys)) {
         return setCache('town',cacheKey,false);
     }
+    // seems we can't trust a cached non-underwater town. could actually be underwater. hrm.
     const seed = hashSeed(x, y);
     setSeed(seed);
     const props = {
         type: 'town',
         seed,
+        id: `${x},${y}`,
         name: fakeName({seed}),
         size: Math.ceil(random()*random()*random()*5)
     };
-    
+    if (props.name === 'Wendbury') {
+        console.log(underwaterTown([x,y], waterPolys));
+    }
     return setCache('town',cacheKey, makePoint(townCoords(x, y), props));
 }
 
 function underwaterTown(townxy, waterPolys) {
-    return waterPolys.find(waterPoly => turf.booleanPointInPolygon(townCoords(...townxy), waterPoly))
+    const res = !!waterPolys.find(waterPoly => turf.booleanPointInPolygon(townCoords(...townxy), waterPoly));
+    if (townxy[0] === 7591 && townxy[1] === -2421) {
+        // console.log(waterPolys);
+        console.log(res);
+    }
+    return res
 }
 
 
@@ -330,23 +341,26 @@ function makeRoads(bounds, zoom, waterPolys) {
 function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFactor) {
     
     const s = z => z / polyScale;
-    function xy(x, y) {
+    function xy(x, y, dx=0, dy=0) {
         setSeedXY(x, y);
-        const M = 0.5;
-        return [(x + M*random0()) / polyScale, (y +  M*random0()) / polyScale];
+        // how far we distort the grid
+        const M = 0.8;
+        return [(x + dx + M*random0()) / polyScale, (y +  dy + M*random0()) / polyScale];
     }
-    function poly(coordinates) {
-        const u = turf.combine(turf.unkinkPolygon({
+    function poly(coordinates, k='hsla(0,0%,50%,0.5)') {
+        const u = turf.unkinkPolygon({
             type: 'Feature',
             properties: {
                 type: type,
+                hello: 'wtf',
+                k: `hsla(${k * 90},80%,50%,0.5)`
             },
-            geometry: turf.rewind({
+            geometry: turf.rewind({ // rewind??
                 type: 'Polygon',
                 coordinates 
             })
-        })).features[0];
-        u.properties = { type }
+        }).features//.features[0];
+        // u.properties = { type }
         // console.log(u);
         return u;
         ;
@@ -354,6 +368,14 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
 
     /* Generate 1-2 polygons */
     function makePoly([x,y]) {
+        function triangle(corner1, corner2, k) {
+            if (ins[corner1] && ins[corner2]) {
+                polys.push(...poly([[
+                    ...complexify([korners[corner1], cp, korners[corner2]], complexity, W),
+                    korners[corner1]
+                ]],0));
+            }
+        }
         const cacheKey = `${x},${y}`;
         if (getCache(type, cacheKey)) {
             return getCache(type, cacheKey);
@@ -362,51 +384,55 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
         setSeedXY(x,y);
         const isInside = coord => simplex.noise2D(coord[0]/10, coord[1]/10) + 1 < ratio * 2;
 
-        const corners = [[x,y], [x+1,y],[x+1,y+1], [x,y+1]];
+        const corners = [[x,y], [x+1,y],[x+1,y+1], [x,y+1], [x,y]];
+        const ins = corners.map(isInside);
+        const korners = corners.map(coord => xy(...coord));
         
         const N = 1; // 1 // how far within the cell the midpoint can be
-        const cp = xy(x + random(), y + random()); // Whoa, this should really be XY. lol.
+        // const cp = xy(x + 0.25 + random() * 0.5, y + 0.25 + random() * 0.5);
+        const cp = xy(x, y, 0.25 + random() * 0.5, 0.25 + random() * 0.5);
 
         const W = /*random() * */wiggleFactor;
+        // complexity = 0;
         const polys = [];
         if (isInside(corners[0]) && isInside(corners[1]) && isInside(corners[2]) && isInside(corners[3])) {
-            polys.push(poly([[
-                xy(x, y),
-                xy(x+1, y),
-                xy(x+1, y+1),
-                xy(x, y+1),
-                xy(x, y)
-            ]]));
+            polys.push(...poly([korners],0.3));
         } else {
-            // return waters
-            if (isInside(corners[0]) && isInside(corners[3])){
+            triangle(0, 3, 0);
+            triangle(2, 1, 1);
+            triangle(3, 2, 2);
+            triangle(1, 0, 3);
+            /*
+
+            // return polys
+            if (1 && ins[0] && ins[3]){
                 // left is water, right is not
-                polys.push(poly([[
-                    ...complexify([xy(x, y), cp, xy(x, y+1)], complexity, W),
-                    xy(x, y)
-                ]]));
+                polys.push(...poly([[
+                    ...complexify([korners[0], cp, korners[3]], complexity, W),
+                    korners[0]
+                ]],0));
             } 
-            if (isInside(corners[1]) && isInside(corners[2])){
+            if (1&& ins[1] && ins[2]){
                 // right is water, left is not
-                polys.push(poly([[
-                    ...complexify([xy(x+1, y), cp, xy(x+1, y+1)], complexity, W),
-                    xy(x+1, y)
-                ]]));
+                polys.push(...poly([[
+                    ...complexify([korners[2], cp, korners[1]], complexity, W),
+                    korners[2]
+                ]],1));
             } 
-            if (isInside(corners[2]) && isInside(corners[3])){
+            if (1 && ins[2] && ins[3]){
                 // up is water, down is not
-                polys.push(poly([[
-                    ...complexify([xy(x, y+1), cp, xy(x+1, y+1)], complexity, W),
-                    xy(x, y+1)
-                ]]));
+                polys.push(...poly([[
+                    ...complexify([korners[3], cp, korners[2]], complexity, W),
+                    korners[3]
+                ]],2));
             }
-            if (isInside(corners[0]) && isInside(corners[1])){
+            if (1 && ins[0] && ins[1]){
                 // down is water, up is not
-                polys.push(poly([[
-                    ...complexify([xy(x, y), cp, xy(x+1, y)], complexity, W),
-                    xy(x, y)
-                ]]));
-            }
+                polys.push(...poly([[
+                    ...complexify([korners[1], cp, korners[0]], complexity, W),
+                    korners[1]
+                ]],3));
+            }*/
         }
         return setCache(type, cacheKey, polys);
 
@@ -425,6 +451,7 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
 }
 
 function perfReport(entities, type, note='') {
+    return;
     const time = perf.stop(`${type}`).time;
     const timeColor = time > 200 ? String(Math.round(time)).red : Math.round(time);
     console.log(`${entities} ${type} ${note} in ${timeColor}ms (${ entities ? Math.round(time / entities * 10)/10 + 'ms each' : '' })`);
@@ -432,12 +459,15 @@ function perfReport(entities, type, note='') {
 
 module.exports = function dataForBounds(bounds, zoom) {
     const WATERSCALE = 30;
-    const waterPolys = turf.flatten(turf.featureCollection(makePolys(bounds, 
+    const WATERWIGGLE = 0.5; // too much wiggle increases the risk of water inverting on itself, leaving a straight edge
+    // maybe the solution is a bias in the complexification so it tends to one side?
+    const waterPolys = /*turf.flatten(turf.featureCollection(*/makePolys(bounds, 
         WATERSCALE,
         'water2',  
         zoom - 5, 
         0.3, 
-        0.45))).features;
+        WATERWIGGLE)//)).features;
+        
     const towns = makeTowns(bounds, waterPolys);
     return {
         type: 'FeatureCollection',
@@ -446,9 +476,9 @@ module.exports = function dataForBounds(bounds, zoom) {
             ...makeRoads(bounds, zoom, waterPolys), 
             ...makePolys(bounds, 100, 'forest',  zoom - 8, 0.5, 0.6), // complexity: 4
             ...makePolys(bounds, 100, 'forest2', zoom - 8, 0.3, 0.8),
-            ...makePolys(bounds, WATERSCALE, 'water',    zoom - 6, 0.3, 0.5),
+            ...makePolys(bounds, WATERSCALE, 'water',    zoom - 6, 0.3, WATERWIGGLE),
             ...waterPolys,
-            ...makePolys(bounds, WATERSCALE, 'water3',   zoom - 8, 0.2, 0.5),
+            // ...makePolys(bounds, WATERSCALE, 'water3',   zoom - 8, 0.2, WATERWIGGLE),
 
 
             // ...makePolys(bounds, 30, 'water4',   zoom - 8, 0.15, 0.5),
