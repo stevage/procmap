@@ -116,16 +116,16 @@ function townCoords(x, y) {
     return coords;
 }
 
-function makeTown([x, y], waterPolys) {
+function makeTown([x, y], waterPolys, forSure) {
     const cacheKey = `${x},${y}`;
-    if (getCache('town', cacheKey) === false) {
+    if (getCache('town', cacheKey) !== undefined) {
         // definitely underwater
         return getCache('town', cacheKey);
     }
     if (underwaterTown([x,y], waterPolys)) {
         return setCache('town',cacheKey,false);
     }
-    // seems we can't trust a cached non-underwater town. could actually be underwater. hrm.
+    
     const seed = hashSeed(x, y);
     setSeed(seed);
     const props = {
@@ -138,7 +138,12 @@ function makeTown([x, y], waterPolys) {
     if (props.name === 'Wendbury') {
         console.log(underwaterTown([x,y], waterPolys));
     }
-    return setCache('town',cacheKey, makePoint(townCoords(x, y), props));
+    const town = makePoint(townCoords(x, y), props);
+    if (forSure) {
+        // only record non-underwater-ness if we're generating the town as a town, as opposed to the remote end of a road.
+        setCache('town',cacheKey, town);
+    }
+    return town
 }
 
 function underwaterTown(townxy, waterPolys) {
@@ -159,7 +164,7 @@ function notUnderwaterTown(townxy, waterPolys) {
 function makeTowns(bounds, waterPolys) {
     perf.start('towns');
     const towns = pointsForBounds(bounds)
-        .map(xy => makeTown(xy, waterPolys))
+        .map(xy => makeTown(xy, waterPolys, true))
         .filter(Boolean); // strip out underwater ones
 
     perfReport(towns.length, 'towns');
@@ -292,11 +297,14 @@ function makeRoads(bounds, zoom, waterPolys) {
     
     /* Determines if two towns should be connected by road */
     function connect(a, b) {
+        const maxsize = Math.max(a.properties.size, b.properties.size);
+        if (zoom + maxsize < 12) {
+            return false
+        };
         const d2 = dist2(a.geometry.coordinates, b.geometry.coordinates) * scale * scale;
         const A = 0.75; // increase for more roads in general
         const B = 0.25; // decrease for more bias towards nearby towns connected
         const C = 20;   // decrease for greater connectivity for large towns
-        const maxsize = Math.max(a.properties.size, b.properties.size);
         return random() < A/(d2 + B) + maxsize/C;
     }
 
@@ -307,6 +315,9 @@ function makeRoads(bounds, zoom, waterPolys) {
             return [[tx2, ty2], [tx1, ty1]];
         }
     }
+    if (zoom < 10) {
+        return [];
+    }    
     const complexity =  zoom * 2 - 18 ; // 7
     const roads = [];
     perf.start('roads');
@@ -451,7 +462,7 @@ function makePolys(bounds, polyScale, type, complexity, ratio = 0.0125, wiggleFa
 }
 
 function perfReport(entities, type, note='') {
-    return;
+    // return;
     const time = perf.stop(`${type}`).time;
     const timeColor = time > 200 ? String(Math.round(time)).red : Math.round(time);
     console.log(`${entities} ${type} ${note} in ${timeColor}ms (${ entities ? Math.round(time / entities * 10)/10 + 'ms each' : '' })`);
@@ -464,7 +475,7 @@ module.exports = function dataForBounds(bounds, zoom) {
     const waterPolys = /*turf.flatten(turf.featureCollection(*/makePolys(bounds, 
         WATERSCALE,
         'water2',  
-        zoom - 5, 
+        zoom - 4, 
         0.3, 
         WATERWIGGLE)//)).features;
         
