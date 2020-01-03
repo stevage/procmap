@@ -14,6 +14,7 @@
     "fake-town-name": "0.3.0",
     "geojson-vt": "^3.2.1",
     "number-generator": "3.0.1",
+    "safe-memory-cache": "^2.0.0",
     "simplex-noise": "^2.4.0",
     "vt-pbf": "^3.1.1"
   },
